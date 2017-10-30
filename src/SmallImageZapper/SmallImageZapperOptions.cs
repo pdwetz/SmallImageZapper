@@ -40,10 +40,10 @@ namespace SmallImageZapper
         [Option('i', "immediate", HelpText = "Flag for skipping initial pause button prior to running. Useful for automated scripts.")]
         public bool Immediate { get; set; }
 
-        [Option('v', "verbose", HelpText = "Displays all event messages")]
+        [Option('v', "verbose", HelpText = "Flag for displaying all event messages")]
         public bool Verbose { get; set; }
 
-        [Option('d', "debug", HelpText = "Debug only mode. No files will be deleted.")]
+        [Option('d', "debug", HelpText = "Flag for debug only mode. No files will be deleted.")]
         public bool Debug { get; set; }
 
         [HelpOption]
