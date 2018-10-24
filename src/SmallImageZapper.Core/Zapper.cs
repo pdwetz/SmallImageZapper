@@ -1,6 +1,6 @@
 ﻿/*
     SmallImageZapper - Will delete all small images in a given folder and all of its subfolders.
-    Copyright (C) 2016 Peter Wetzel
+    Copyright (C) 2018 Peter Wetzel
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -21,42 +21,27 @@ using System.Diagnostics;
 using System.IO;
 using System.Text;
 using Microsoft.VisualBasic.FileIO;
+using Serilog;
 
 namespace SmallImageZapper.Core
 {
     public class Zapper
     {
-        // Settings
-        /// <summary>
-        /// Minimum number of pixels (height * width) required; anything smaller will be deleted. E.g. 400 x 600 = 240,000.
-        /// </summary>
-        public int MinPixels { get; set; } = 240000;
-        /// <summary>
-        /// Maximum number of bytes allowed. This is primarily a shortcut for skipping larger files, since taglib isn't particularly fast.
-        /// </summary>
-        public int MaxBytes { get; set; } = int.MaxValue;
-        /// <summary>
-        /// Flag for whether we try to use the recycling bin or fo a hard delete (physically delete the file).
-        /// </summary>
-        public bool IsHardDelete { get; set; } = false;
-        /// <summary>
-        /// Current design will try to load any file via taglib for processing. Use this list to avoid any file types you'd like to skip (e.g. ".gif", ".zip").
-        /// </summary>
-        public List<string> SkipExtensions { get; set; }
-        /// <summary>
-        /// Flag for whether we write output for all steps or not.
-        /// </summary>
-        public bool IsVerbose { get; set; }
-        /// <summary>
-        /// Flag for whether we actually delete the files or just do a dry run.
-        /// </summary>
-        public bool IsDebugOnly { get; set; }
+        private readonly ZapperSettings _settings;
 
-        // Tracking
         public int TotalFolders { get; private set; }
         public int TotalFiles { get; private set; }
         public int DeletedFiles { get; private set; }
         public long ElapsedMS { get; private set; }
+
+        public Zapper(ZapperSettings settings)
+        {
+            _settings = settings;
+            if (_settings.SkipExtensions == null)
+            {
+                _settings.SkipExtensions = new List<string>();
+            }
+        }
 
         /// <summary>
         /// Zapper will recursively remove all small images in the given folder and its subfolders.
@@ -66,15 +51,12 @@ namespace SmallImageZapper.Core
         {
             if (string.IsNullOrWhiteSpace(path))
             {
-                Console.ForegroundColor = ConsoleColor.Red;
-                Console.WriteLine("Path required");
+                Log.Error("Path required");
                 return;
             }
-
             if (!Directory.Exists(path))
             {
-                Console.ForegroundColor = ConsoleColor.Red;
-                Console.WriteLine($"Folder does not exist: {path}");
+                Log.Error("Directory does not exist: {Path}", path);
                 return;
             }
             var timer = new Stopwatch();
@@ -96,35 +78,19 @@ namespace SmallImageZapper.Core
             {
                 return;
             }
-            if (IsVerbose)
-            {
-                Console.ForegroundColor = ConsoleColor.White;
-                Console.WriteLine($"Processing folder: {path} ({files.Length} files)");
-            }
-            if (SkipExtensions == null)
-            {
-                SkipExtensions = new List<string>();
-            }
+            Log.Verbose("Processing {Path} ({FileCount})", path, files.Length);
             TotalFolders++;
             TotalFiles += files.Length;
             foreach (var f in files)
             {
-                if (SkipExtensions.Contains(Path.GetExtension(f)))
+                if (_settings.SkipExtensions.Contains(Path.GetExtension(f)))
                 {
-                    if (IsVerbose)
-                    {
-                        Console.ForegroundColor = ConsoleColor.Gray;
-                        Console.WriteLine($"Skipping extension for file: {f}");
-                    }
+                    Log.Verbose("Skipping extension for {file}", f);
                     continue;
                 }
-                if (new FileInfo(f).Length > MaxBytes)
+                if (new FileInfo(f).Length > _settings.MaxBytes)
                 {
-                    if (IsVerbose)
-                    {
-                        Console.ForegroundColor = ConsoleColor.Gray;
-                        Console.WriteLine($"Skipping large file: {f}");
-                    }
+                    Log.Verbose("Skipping large {file}", f);
                     continue;
                 }
                 TagLib.File file = null;
@@ -134,40 +100,25 @@ namespace SmallImageZapper.Core
                 }
                 catch (TagLib.UnsupportedFormatException)
                 {
-                    if (IsVerbose)
-                    {
-                        Console.ForegroundColor = ConsoleColor.Yellow;
-                        Console.WriteLine($"Unsupported file: {f}");
-                    }
+                    Log.Verbose("Unsupported format {file}", f);
                     continue;
                 }
                 catch (TagLib.CorruptFileException)
                 {
-                    if (IsVerbose)
-                    {
-                        Console.ForegroundColor = ConsoleColor.Yellow;
-                        Console.WriteLine($"Corrupt file: {f}");
-                    }
+                    Log.Verbose("Corrupt {file}", f);
                     continue;
                 }
-                catch (Exception)
+                catch (Exception ex)
                 {
-                    if (IsVerbose)
-                    {
-                        Console.ForegroundColor = ConsoleColor.Yellow;
-                        Console.WriteLine($"TagLib Unable to open file: {f}");
-                    }
+                    Log.Verbose("TagLib Unable to open {file}", f);
+                    Log.Error(ex, "Error thrown by TagLib");
                     continue;
                 }
 
                 var image = file as TagLib.Image.File;
                 if (image == null)
                 {
-                    if (IsVerbose)
-                    {
-                        Console.ForegroundColor = ConsoleColor.Yellow;
-                        Console.WriteLine($"Not an image file: {f}");
-                    }
+                    Log.Verbose("Not an image {file}", f);
                     continue;
                 }
 
@@ -178,27 +129,19 @@ namespace SmallImageZapper.Core
                     {
                         msg.AppendLine("    * " + reason);
                     }
-                    if (IsVerbose)
-                    {
-                        Console.ForegroundColor = ConsoleColor.Yellow;
-                        Console.WriteLine($"Skipping possibly corrupt image: {f} {msg.ToString()}");
-                    }
+                    Log.Verbose("Skipping possibly corrupt image {file} {CorruptionReasons}", f, msg.ToString());
                     continue;
                 }
                 else if (image.Properties != null)
                 {
                     int pixels = image.Properties.PhotoWidth * image.Properties.PhotoHeight;
-                    if (pixels < MinPixels)
+                    if (pixels < _settings.MinPixels)
                     {
-                        if (IsVerbose)
-                        {
-                            Console.ForegroundColor = ConsoleColor.Red;
-                            Console.WriteLine($"Small image: {f}");
-                        }
+                        Log.Verbose("Deleting small image {file}", f);
                         DeletedFiles++;
-                        if (!IsDebugOnly)
+                        if (!_settings.IsDebugOnly)
                         {
-                            if (IsHardDelete)
+                            if (_settings.IsHardDelete)
                             {
                                 File.Delete(f);
                             }
@@ -211,11 +154,7 @@ namespace SmallImageZapper.Core
                 }
                 else
                 {
-                    if (IsVerbose)
-                    {
-                        Console.ForegroundColor = ConsoleColor.Yellow;
-                        Console.WriteLine($"No image properties: {f}");
-                    }
+                    Log.Verbose("No image properties {file}", f);
                 }
             }
         }

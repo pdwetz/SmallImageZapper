@@ -1,6 +1,6 @@
 ﻿/*
     SmallImageZapper - Will delete all small images in a given folder and all of its subfolders.
-    Copyright (C) 2016 Peter Wetzel
+    Copyright (C) 2018 Peter Wetzel
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -15,10 +15,10 @@
     You should have received a copy of the GNU General Public License
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
-using System.Collections.Generic;
-using System.IO;
 using NUnit.Framework;
 using SmallImageZapper.Core;
+using System.Collections.Generic;
+using System.IO;
 
 namespace SmallImageZapper.Test
 {
@@ -29,11 +29,14 @@ namespace SmallImageZapper.Test
         public void min_pixels()
         {
             string folderPath = Path.Combine(TestContext.CurrentContext.TestDirectory, "assets");
-            Zapper zapper = new Zapper();
-            zapper.IsDebugOnly = true;
-            zapper.IsVerbose = true;
-            zapper.MinPixels = 200 * 200;
-            zapper.MaxBytes = int.MaxValue;
+            var settings = new ZapperSettings
+            {
+                IsDebugOnly = true,
+                MinPixels = 200 * 200,
+                MaxBytes = int.MaxValue,
+
+            };
+            var zapper = new Zapper(settings);
             zapper.Process(folderPath);
             Assert.AreEqual(1, zapper.TotalFolders);
             Assert.AreEqual(13, zapper.TotalFiles);
@@ -44,12 +47,15 @@ namespace SmallImageZapper.Test
         public void skip_extension()
         {
             string folderPath = Path.Combine(TestContext.CurrentContext.TestDirectory, "assets");
-            Zapper zapper = new Zapper();
-            zapper.IsDebugOnly = true;
-            zapper.IsVerbose = true;
-            zapper.MinPixels = int.MaxValue;
-            zapper.MaxBytes = int.MaxValue;
-            zapper.SkipExtensions = new List<string> { ".gif" };
+            var settings = new ZapperSettings
+            {
+                IsDebugOnly = true,
+                MinPixels = int.MaxValue,
+                MaxBytes = int.MaxValue,
+                SkipExtensions = new List<string> { ".gif" }
+
+            };
+            var zapper = new Zapper(settings);
             zapper.Process(folderPath);
             Assert.AreEqual(1, zapper.TotalFolders);
             Assert.AreEqual(13, zapper.TotalFiles);
@@ -60,11 +66,13 @@ namespace SmallImageZapper.Test
         public void max_file_size()
         {
             string folderPath = Path.Combine(TestContext.CurrentContext.TestDirectory, "assets");
-            Zapper zapper = new Zapper();
-            zapper.IsDebugOnly = true;
-            zapper.IsVerbose = true;
-            zapper.MinPixels = int.MaxValue;
-            zapper.MaxBytes = 30000;
+            var settings = new ZapperSettings
+            {
+                IsDebugOnly = true,
+                MinPixels = int.MaxValue,
+                MaxBytes = 30000
+            };
+            var zapper = new Zapper(settings);
             zapper.Process(folderPath);
             Assert.AreEqual(1, zapper.TotalFolders);
             Assert.AreEqual(13, zapper.TotalFiles);
