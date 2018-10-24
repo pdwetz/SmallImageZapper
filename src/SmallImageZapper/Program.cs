@@ -1,6 +1,6 @@
 ﻿/*
     SmallImageZapper - Will delete all small images in a given folder and all of its subfolders.
-    Copyright (C) 2016 Peter Wetzel
+    Copyright (C) 2018 Peter Wetzel
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -15,11 +15,12 @@
     You should have received a copy of the GNU General Public License
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
+using CommandLine;
+using Serilog;
+using SmallImageZapper.Core;
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using CommandLine;
-using SmallImageZapper.Core;
 
 namespace SmallImageZapper
 {
@@ -27,46 +28,44 @@ namespace SmallImageZapper
     {
         static void Main(string[] args)
         {
-            var initialColor = Console.ForegroundColor;
-            var options = new SmallImageZapperOptions();
-            if (!Parser.Default.ParseArguments(args, options))
+            Log.Logger = new LoggerConfiguration()
+                .MinimumLevel.Debug()
+                .WriteTo.Debug()
+                .WriteTo.Console(restrictedToMinimumLevel: Serilog.Events.LogEventLevel.Information)
+                .CreateLogger();
+
+            Parser.Default.ParseArguments<SmallImageZapperOptions>(args)
+                .WithParsed<SmallImageZapperOptions>(opts => RunOptionsAndReturnExitCode(opts));
+        }
+
+        private static void RunOptionsAndReturnExitCode(SmallImageZapperOptions options)
+        {
+            try
             {
-                return;
-            }
-            var z = new Zapper();
-            z.MinPixels = options.Pixels;
-            z.MaxBytes = options.MaxBytes;
-            z.SkipExtensions = ParseSkipExtensions(options.SkipExt);
-            z.IsVerbose = options.Verbose;
-            z.IsDebugOnly = options.Debug;
-            z.IsHardDelete = options.HardDelete;
-            Console.ForegroundColor = ConsoleColor.Gray;
-            if (!options.Immediate || z.IsVerbose)
-            {
-                Console.WriteLine($"Root path: {options.FolderPath}");
-                Console.WriteLine($"Min pixel size: {z.MinPixels:#,##0}");
-                Console.WriteLine($"Max file size: {z.MaxBytes:#,##0} bytes");
-                if (z.SkipExtensions.Count > 0)
+                options.SkipExtensions = ParseSkipExtensions(options.SkipExt);
+                Log.Verbose("Running using {@Options}", options);
+                var z = new Zapper(options);
+                if (options.IsDebugOnly)
                 {
-                    Console.WriteLine($"Skipping extensions: {string.Join(", ", z.SkipExtensions)}");
+                    Log.Information("Debug mode enabled. No files will be deleted.");
+                }
+                Log.Information("Working...");
+                z.Process(options.FolderPath);
+                Log.Information($"Processed {z.TotalFolders:#,##0} folders in {z.ElapsedMS:#,##0} ms. Deleted {z.DeletedFiles:#,##0} files out of {z.TotalFiles:#,##0} found.");
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, ex.Message);
+            }
+            finally
+            {
+                Log.CloseAndFlush();
+                if (options.PauseAtCompletion)
+                {
+                    Console.WriteLine("Press any key to continue.");
+                    Console.ReadLine();
                 }
             }
-            if (z.IsDebugOnly)
-            {
-                Console.ForegroundColor = ConsoleColor.Yellow;
-                Console.WriteLine("Debug mode enabled. No files will be deleted.");
-            }
-            Console.ForegroundColor = ConsoleColor.White;
-            if (!options.Immediate)
-            {
-                Console.WriteLine("SmallImageZapper ready to begin. Press any key to continue.");
-                Console.ReadLine();
-            }
-            Console.WriteLine("Working...");
-            z.Process(options.FolderPath);
-            Console.ForegroundColor = ConsoleColor.Green;
-            Console.WriteLine($"Processed {z.TotalFolders:#,##0} folders in {z.ElapsedMS:#,##0} ms. Deleted {z.DeletedFiles:#,##0} files out of {z.TotalFiles:#,##0} found.");
-            Console.ForegroundColor = initialColor;
         }
 
         private static List<string> ParseSkipExtensions(string raw)
